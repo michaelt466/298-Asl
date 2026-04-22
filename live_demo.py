@@ -3,6 +3,7 @@ import sys				# Import for time
 import os		# Import for reading files
 import threading		# Import for separate thread for image classification
 import numpy as np 		# Import for converting vectors
+import display
 from gtts import gTTS   # Import Google Text to Speech
 import spell_checker as spell_checker
 #import spell_checker	# Import for spelling corrections
@@ -96,6 +97,9 @@ with tf.Session() as sess:
 	# Toggle spell checking
 	spell_check = False
 
+	# Setup the live display window
+	window_name = display.setup_display("Live Stream")
+
 	# Infinite loop
 	LOOP = False; # just a label for me to find the start of the loop
 	while True:
@@ -117,27 +121,11 @@ with tf.Session() as sess:
 		# Get frame dimensions *** MIGHT SLOW A LOT
 		#ret, frame = live_stream.read()
 		height, width = img.shape[:2]
-		# Position near bottom-left
-		position = (10, height - 20)
 
-		# Set a region of interest
-		cv2.rectangle(img, (70, 70), (350, 350), (0,255,0), 2)
+		# Used to setup display
+		import display
+		display.update_display(img, current_word, window_name)
 
-
-		cv2.putText(
-				img,
-				current_word,
-				position,
-				cv2.FONT_HERSHEY_SIMPLEX,
-				1,              # font scale
-				(0, 255, 0),   # color (B, G, R)
-				2,              # thickness
-				cv2.LINE_AA
-			)
-		
-		# Show the live stream
-		cv2.imshow("Live Stream", img)
-		
 		# To get time intervals
 		if time_counter % 45 == 0 and realTime:
 
