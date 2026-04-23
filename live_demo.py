@@ -137,7 +137,7 @@ with tf.Session() as sess:
 			if letter.upper() == 'SPACE' or letter.upper() == 'DEL':
 				if len(current_word) > 0:
 					if True:
-						speak_letter(spell_checker.correction(current_word))
+						speak_letter(current_word)#spell_checker.correction(current_word)
 					else:
 						speak_letter(current_word)
 				current_word = ""
@@ -182,7 +182,7 @@ with tf.Session() as sess:
 			if letter.upper() == 'SPACE' or letter.upper() == 'DEL':
 				if len(current_word) > 0:
 					if True:
-						speak_letter(spell_checker.correction(current_word))
+						speak_letter(current_word)#spell_checker.correction(current_word)
 					else:
 						speak_letter(current_word)
 				current_word = ""
