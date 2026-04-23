@@ -3,37 +3,32 @@ import pyttsx3
 # ════════════════════════════════════════════════════════════════════════════
 #  VOICE ENGINE
 # ════════════════════════════════════════════════════════════════════════════
-engine = None
 
+def build_engine():
+    """Initialize and configure the TTS engine."""
+    engine = pyttsx3.init()
 
-def init_tts():
-    global engine
-    if pyttsx3 is not None:
-        try:
-            engine = pyttsx3.init()
-            voices = engine.getProperty('voices')  # type: ignore
-            for v in voices:  # type: ignore
-                    if 'male' in v.name.lower() or 'david' in v.name.lower():  # type: ignore
-                        engine.setProperty('voice', v.id)  # type: ignore
-                        break
+    voices = engine.getProperty('voices')
+    male_voice = next(
+        (v for v in (voices or []) if 'male' in v.name.lower() or 'david' in v.name.lower()), # type: ignore
+        None
+    )
+    if male_voice:
+        engine.setProperty('voice', male_voice.id)
 
-            engine.setProperty('rate', 165)   # Slightly slower = more robotic gravitas
-            engine.setProperty('volume', 0.95)
-        except Exception as e:
-            print(f" Voice failed to initialize: {e}")
-    else:
-        print(" pyttsx3 not available, TTS disabled")
+    engine.setProperty('rate', 165)
+    engine.setProperty('volume', 0.95)
+
+    return engine
+
 
 def speak(text: str):
     """Speak text in a blocking call (run in thread)."""
-    if engine:
-        try:
-            engine.stop()
-            engine.say(text)
-            engine.runAndWait()
-        except Exception as e:
-            print(f"Voice error: {e}")
+    try:
+        engine = build_engine()
+        engine.say(text)
+        engine.runAndWait()
+        engine.stop()
 
-# Initialize on import
-init_tts()
-
+    except Exception as e:
+        print(f"Voice error: {e}")
