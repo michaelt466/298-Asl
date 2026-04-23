@@ -1,11 +1,12 @@
+
 import cv2				# Import OpenCV for image processing
 import sys				# Import for time
 import os		# Import for reading files
 import threading		# Import for separate thread for image classification
 import numpy as np 		# Import for converting vectors
 import display
-from gtts import gTTS   # Import Google Text to Speech
 import spell_checker as spell_checker
+import voice as voice
 #import spell_checker	# Import for spelling corrections
 
 # Disable tensorflow compilation warnings
@@ -15,6 +16,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 # added this new import
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
+
+
 
 # Language in which you want to convert
 language = 'en'
@@ -69,17 +72,10 @@ def predict(image_data):
 	return res, max_score
 
 def speak_letter(letter):
-	# Create the text to be spoken
+    # Create the text to be spoken
     prediction_text = letter
+    voice.speak(prediction_text)
     
-    # Create a speech object from text to be spoken
-    speech_object = gTTS(text=prediction_text, lang=language, slow=False)
-
-    # Save the speech object in a file called 'prediction.mp3'
-    speech_object.save("prediction.mp3")
- 
-    # Playing the speech using mpg321
-    os.system("afplay prediction.mp3")
 
 with tf.Session() as sess:
 	# Feed the image_data as input to the graph and get first prediction
@@ -99,8 +95,6 @@ with tf.Session() as sess:
 
 	# Setup the live display window
 	window_name = display.setup_display("Live Stream")
-
-	# Infinite loop
 	LOOP = False; # just a label for me to find the start of the loop
 	while True:
 
@@ -123,7 +117,6 @@ with tf.Session() as sess:
 		height, width = img.shape[:2]
 
 		# Used to setup display
-		import display
 		display.update_display(img, current_word, window_name)
 
 		# To get time intervals
