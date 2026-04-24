@@ -1,4 +1,0 @@
--r requirements.txt
-pywin32==311
-pypiwin32==223
-comtypes==1.4.16
