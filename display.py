@@ -1,143 +1,126 @@
 import cv2
 import numpy as np
 import os
-from spire.presentation import Presentation, FileFormat
+import tkinter as tk
+from tkinter import filedialog
+from spire.presentation import Presentation
+
+# Pre-initialize Tkinter for the file dialog to avoid lag
+root = tk.Tk()
+root.withdraw()
+
+def setup_display(window_name="Live Stream"):
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, 1280, 720)
+    return window_name
 
 def load_pptx_as_images(pptx_path):
-    """Converts a PPTX file into a list of OpenCV images using Spire.Presentation."""
+    """Converts a PPTX file into a list of OpenCV images using Spire."""
     pres = Presentation()
     pres.LoadFromFile(pptx_path)
     slide_images = []
     
     for i in range(pres.Slides.Count):
-        # Save slide to a stream (image format)
         with pres.Slides[i].SaveAsImage() as image:
-            # Convert Spire image to a format OpenCV can read (numpy array)
-            # We save to a temp buffer to avoid complex memory mapping
-            image_path = f"temp_slide_{i}.png"
-            image.Save(image_path)
-            
-            # Read back into OpenCV
-            cv_img = cv2.imread(image_path)
+            temp_path = f"temp_{i}.png"
+            image.Save(temp_path)
+            cv_img = cv2.imread(temp_path)
             if cv_img is not None:
                 slide_images.append(cv_img)
-            
-            # Clean up temp file
-            if os.path.exists(image_path):
-                os.remove(image_path)
-                
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
     pres.Dispose()
     return slide_images
 
 def load_single_slide(path):
-    """Detects file type and loads accordingly."""
+    if not path: return []
     if path.lower().endswith('.pptx'):
-        try:
-            return load_pptx_as_images(path)
-        except Exception as e:
-            print(f"Error loading PPTX with Spire: {e}")
-            return []
-    
-    # Default to standard image loading
+        return load_pptx_as_images(path)
     img = cv2.imread(path)
     return [img] if img is not None else []
 
-def draw_slide_area(canvas, slides, slide_idx, region):
-    """Draws the slide and returns the bounding boxes for Prev/Next buttons."""
-    x1, y1, x2, y2 = region
-    w, h = x2 - x1, y2 - y1
-    
-    # Draw Background
-    cv2.rectangle(canvas, (x1, y1), (x2, y2), (30, 30, 30), -1)
-    
-    if slides and len(slides) > 0:
-        slide = slides[slide_idx]
-        sh, sw = slide.shape[:2]
-        scale = min(w/sw, h/sh)
-        nw, nh = int(sw*scale), int(sh*scale)
-        resized = cv2.resize(slide, (nw, nh), interpolation=cv2.INTER_AREA)
-        
-        # Center the slide in the region
-        ox, oy = x1 + (w-nw)//2, y1 + (h-nh)//2
-        canvas[oy:oy+nh, ox:ox+nw] = resized
+def handle_clicks(event, x, y, flags, param):
+    """Global click handler to be used in the main loop."""
+    global last_click
+    if event == cv2.EVENT_LBUTTONDOWN:
+        last_click = (x, y)
 
-    # Define Button Rects (Relative to slide area)
-    prev_rect = (x1 + 10, y2 - 50, x1 + 60, y2 - 10)
-    next_rect = (x2 - 60, y2 - 50, x2 - 10, y2 - 10)
-    
-    # Draw Navigation Buttons
-    for rect, text in [(prev_rect, "<"), (next_rect, ">")]:
-        cv2.rectangle(canvas, (rect[0], rect[1]), (rect[2], rect[3]), (100, 100, 100), -1)
-        cv2.putText(canvas, text, (rect[0]+15, rect[1]+30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-        
-    return prev_rect, next_rect
-
-def draw_upload_button(canvas, btn_state, x_center, y_center):
-    """Draws the upload button and returns its bounding box."""
-    color = (0, 150, 0) if not btn_state else (0, 255, 0)
-    rect = (x_center - 60, y_center - 20, x_center + 60, y_center + 20)
-    
-    cv2.rectangle(canvas, (rect[0], rect[1]), (rect[2], rect[3]), color, -1)
-    cv2.putText(canvas, "UPLOAD", (rect[0]+12, rect[1]+30), 
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-    return rect
-
-def draw_subtitle_bar(canvas, current_word, enabled, content_h, width, subtitle_h):
-    y_start = content_h
-    cv2.rectangle(canvas, (0, y_start), (width, y_start + subtitle_h), (20, 20, 20), -1)
-    
-    if enabled:
-        display_text = f"TEXT: {current_word}"
-        cv2.putText(canvas, display_text, (20, y_start + 40), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+last_click = None
 
 def update_display(cam_frame, current_word, window_name="Live Stream", 
-                   settings=None, hand_coords=None, slides=None, 
-                   slide_idx=0, sign_img=None, btn_state=False):
-    
+                   settings=None, slides_state=None):
+    """
+    slides_state should be a dict: {'slides': [], 'idx': 0}
+    This function now handles the click logic internally.
+    """
+    global last_click
     if settings is None: settings = {"subtitles": True}
-    if slides is None: slides = []
+    if slides_state is None: slides_state = {'slides': [], 'idx': 0}
     
     WIDTH, HEIGHT = 1280, 720
     SUBTITLE_H = 60
     CONTENT_H = HEIGHT - SUBTITLE_H
 
-    # Create Dark Theme Canvas
     canvas = np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8)
     canvas[:] = (45, 45, 45)
 
-    # --- Left: Camera Area ---
-    cam_x1, cam_y1 = 15, 15
-    cam_x2, cam_y2 = int(WIDTH * 0.45), CONTENT_H - 15
+    # --- Camera Area ---
+    cam_x1, cam_y1, cam_x2, cam_y2 = 15, 15, int(WIDTH * 0.45), CONTENT_H - 15
     cv2.rectangle(canvas, (cam_x1, cam_y1), (cam_x2, cam_y2), (20, 20, 20), -1)
-
     if cam_frame is not None:
-        rw, rh = cam_x2 - cam_x1, cam_y2 - cam_y1
+        # Resize and center camera logic...
         ch, cw = cam_frame.shape[:2]
-        scale = min(rw / cw, rh / ch)
-        nw, nh = int(cw * scale), int(ch * scale)
-        resized_cam = cv2.resize(cam_frame, (nw, nh), interpolation=cv2.INTER_AREA)
-        ox, oy = cam_x1 + (rw - nw) // 2, cam_y1 + (rh - nh) // 2
-        canvas[oy:oy + nh, ox:ox + nw] = resized_cam
+        scale = min((cam_x2-cam_x1)/cw, (cam_y2-cam_y1)/ch)
+        nw, nh = int(cw*scale), int(ch*scale)
+        resized = cv2.resize(cam_frame, (nw, nh))
+        canvas[cam_y1:cam_y1+nh, cam_x1:cam_x1+nw] = resized
 
-        # ROI Overlay (Matching your [70:350, 70:350] prediction logic)
-        # Scaling the ROI box relative to the resized camera feed
-        bx1, by1 = int(70 * scale) + ox, int(70 * scale) + oy
-        bx2, by2 = int(350 * scale) + ox, int(350 * scale) + oy
-        cv2.rectangle(canvas, (bx1, by1), (bx2, by2), (0, 255, 0), 2)
-        cv2.putText(canvas, "ROI", (bx1, by1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+    # --- Slides Area ---
+    sx1, sy1, sx2, sy2 = int(WIDTH * 0.45) + 15, 15, WIDTH - 15, CONTENT_H - 15
+    cv2.rectangle(canvas, (sx1, sy1), (sx2, sy2), (30, 30, 30), -1)
+    
+    if slides_state['slides']:
+        slide = slides_state['slides'][slides_state['idx']]
+        sh, sw = slide.shape[:2]
+        s_scale = min((sx2-sx1)/sw, (sy2-sy1)/sh)
+        snw, snh = int(sw*s_scale), int(sh*s_scale)
+        s_resized = cv2.resize(slide, (snw, snh))
+        canvas[sy1:sy1+snh, sx1:sx1+snw] = s_resized
 
-    # --- Right: Slides Area ---
-    slide_x1 = int(WIDTH * 0.45) + 15
-    slide_region = (slide_x1, 15, WIDTH - 15, CONTENT_H - 15)
-    prev_rect, next_rect = draw_slide_area(canvas, slides, slide_idx, slide_region)
+    # --- Buttons ---
+    # Upload Button
+    up_rect = (WIDTH - 150, CONTENT_H + 10, WIDTH - 20, HEIGHT - 10)
+    cv2.rectangle(canvas, (up_rect[0], up_rect[1]), (up_rect[2], up_rect[3]), (0, 120, 0), -1)
+    cv2.putText(canvas, "UPLOAD", (up_rect[0]+15, up_rect[1]+35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
 
-    # --- Bottom: UI Controls & Subtitles ---
-    draw_subtitle_bar(canvas, current_word, settings.get("subtitles"), CONTENT_H, WIDTH, SUBTITLE_H)
-    upload_rect = draw_upload_button(canvas, btn_state, WIDTH - 100, CONTENT_H + SUBTITLE_H // 2)
+    # Prev/Next Buttons
+    p_rect = (sx1 + 10, sy2 - 50, sx1 + 70, sy2 - 10)
+    n_rect = (sx2 - 70, sy2 - 50, sx2 - 10, sy2 - 10)
+    cv2.rectangle(canvas, (p_rect[0], p_rect[1]), (p_rect[2], p_rect[3]), (80, 80, 80), -1)
+    cv2.rectangle(canvas, (n_rect[0], n_rect[1]), (n_rect[2], n_rect[3]), (80, 80, 80), -1)
+    cv2.putText(canvas, "<", (p_rect[0]+20, p_rect[1]+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2)
+    cv2.putText(canvas, ">", (n_rect[0]+20, n_rect[1]+30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2)
+
+    # --- Subtitles ---
+    cv2.putText(canvas, f"Text: {current_word}", (20, CONTENT_H + 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
+
+    # --- CLICK DETECTION LOGIC ---
+    if last_click:
+        lx, ly = last_click
+        # Check Upload
+        if up_rect[0] < lx < up_rect[2] and up_rect[1] < ly < up_rect[3]:
+            path = filedialog.askopenfilename(filetypes=[("Slides", "*.pptx"), ("Images", "*.jpg;*.png")])
+            if path:
+                slides_state['slides'] = load_single_slide(path)
+                slides_state['idx'] = 0
+        
+        # Check Prev/Next
+        if p_rect[0] < lx < p_rect[2] and p_rect[1] < ly < p_rect[3]:
+            slides_state['idx'] = max(0, slides_state['idx'] - 1)
+        if n_rect[0] < lx < n_rect[2] and n_rect[1] < ly < n_rect[3]:
+            slides_state['idx'] = min(len(slides_state['slides']) - 1, slides_state['idx'] + 1)
+            
+        last_click = None # Reset click
 
     cv2.imshow(window_name, canvas)
-    
-    # Crucial: Returning the clickable regions so main.py can detect clicks
-    return upload_rect, prev_rect, next_rect
+    cv2.setMouseCallback(window_name, handle_clicks)
