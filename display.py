@@ -1,41 +1,44 @@
 import cv2
 import numpy as np
 import os
-import aspose.slides as slides_api
-
-def setup_display(window_name="Live Stream"):
-    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(window_name, 1280, 720)
-    return window_name
+from spire.presentation import Presentation, FileFormat
 
 def load_pptx_as_images(pptx_path):
-    """Converts a PPTX file into a list of OpenCV images."""
-    presentation = slides_api.Presentation(pptx_path)
+    """Converts a PPTX file into a list of OpenCV images using Spire.Presentation."""
+    pres = Presentation()
+    pres.LoadFromFile(pptx_path)
     slide_images = []
     
-    for i in range(len(presentation.slides)):
-        # Higher scale = better quality
-        bmp = presentation.slides[i].get_thumbnail(1.5, 1.5)
-        
-        # Convert Aspose Bitmap to BGR for OpenCV
-        img_array = np.array(bmp)
-        # Aspose often returns RGBA; convert to BGR
-        if img_array.shape[2] == 4:
-            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
-        else:
-            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-        slide_images.append(img_bgr)
-        
+    for i in range(pres.Slides.Count):
+        # Save slide to a stream (image format)
+        with pres.Slides[i].SaveAsImage() as image:
+            # Convert Spire image to a format OpenCV can read (numpy array)
+            # We save to a temp buffer to avoid complex memory mapping
+            image_path = f"temp_slide_{i}.png"
+            image.Save(image_path)
+            
+            # Read back into OpenCV
+            cv_img = cv2.imread(image_path)
+            if cv_img is not None:
+                slide_images.append(cv_img)
+            
+            # Clean up temp file
+            if os.path.exists(image_path):
+                os.remove(image_path)
+                
+    pres.Dispose()
     return slide_images
 
 def load_single_slide(path):
+    """Detects file type and loads accordingly."""
     if path.lower().endswith('.pptx'):
         try:
             return load_pptx_as_images(path)
         except Exception as e:
-            print(f"Error loading PPTX: {e}")
+            print(f"Error loading PPTX with Spire: {e}")
             return []
     
+    # Default to standard image loading
     img = cv2.imread(path)
     return [img] if img is not None else []
 
