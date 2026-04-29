@@ -114,7 +114,7 @@ with tf.Session() as sess:
 
         # Real-time mode: predict every 45 frames
         if time_counter % 45 == 0 and realTime:
-            process_letter(sess, softmax_tensor, img)
+            threading.Thread(target=process_letter, args=(sess, softmax_tensor, img.copy())).start()
 
         # 'C' pressed — switch to capture mode
         if keypress == ord('c'):
@@ -128,7 +128,7 @@ with tf.Session() as sess:
         # Capture mode: predict on demand
         if captureFlag:
             captureFlag = False
-            process_letter(sess, softmax_tensor, img)
+            threading.Thread(target=process_letter, args=(sess, softmax_tensor, img.copy())).start()
 
         # ESC pressed — exit
         if keypress == 27:
